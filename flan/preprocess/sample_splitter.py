@@ -29,6 +29,10 @@ class FoldSplitter:
             y: y can be passed to trigger StratifiedKFold instead of KFold
             random_state (int): Fixed random_state for train_test_split sklearn function
         """
+        # adding min 5 folds
+        num_folds = getattr(self.args, "num_folds", 5)
+        self.args.num_folds = num_folds
+
         ids = pandas.read_table(cache.ids_path()).rename(columns={'#IID': 'IID'}).filter(['FID', 'IID'])
         indices = numpy.arange(ids.shape[0])
         if self.args.num_folds == 1:
