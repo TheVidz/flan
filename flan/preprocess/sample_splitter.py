@@ -71,12 +71,17 @@ class FoldSplitter:
                 ids.iloc[indices, :].to_csv(out_path, sep='\t', index=False)
                 
     def _split_genotypes(self, cache: FileCache) -> None:
+        # 🔥 Force use of QC-processed genotype
+        base_path = str(cache.pfile_path())
+        if not base_path.endswith("_qc"):
+            base_path = base_path + "_qc"
+
         for fold_index, part in product(range(cache.num_folds), ['train', 'val', 'test']):
             run_plink(
                 args_dict={
-                    '--pfile': str(cache.pfile_path()),
+                    '--pfile': base_path,  # ✅ FIXED: use QC data
                     '--keep': str(cache.ids_path(fold_index, part)),
-                    '--out':  str(cache.pfile_path(fold_index, part))
+                    '--out': str(cache.pfile_path(fold_index, part))
                 },
                 args_list=['--make-pgen']
             )
@@ -93,7 +98,9 @@ class FoldSplitter:
             )
     
     def fit_transform(self, cache: FileCache) -> None:
-        
+        # Force splitter to use QC output
+        if not str(cache.pfile_path()).endswith("_qc"):
+            cache._pfile_path = str(cache.pfile_path()) + "_qc"
         self._split_ids(cache)
         self._split_genotypes(cache)
         self._split_phenotypes(cache)

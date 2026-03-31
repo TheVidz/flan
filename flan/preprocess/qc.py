@@ -26,7 +26,7 @@ class QC:
             ],
             args_dict={
                 '--out': qc_path,
-                '--set-missing-var-ids': '@:#',
+                '--set-missing-var-ids': '@:#:$r:$a',
                 **self.qc_config
             }
         )
