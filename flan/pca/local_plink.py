@@ -38,6 +38,7 @@ class PCA:
                           args_dict={'--pfile': str(cache.pfile_path(fold, part)),
                                      '--read-freq': str(cache.pca_path(fold, 'train', 'counts')),
                                      '--score-col-nums': f'6-{6+self.args.n_components - 1}',
+                                     '--mac': '1',
                                      '--out': cache.pfile_path(fold, part)})
                 
                 self.pc_scatterplot(cache, fold, part)
@@ -49,6 +50,7 @@ class PCA:
                  args_dict={'--pfile': str(cache.pfile_path(part='pred')),
                             '--read-freq': str(cache.pca_path(0, 'train', 'counts')),
                             '--score-col-nums': f'6-{6+self.args.n_components - 1}',
+                            '--mac': '1',
                             '--out': cache.pfile_path(part='pred')})
                 
                 
