@@ -32,28 +32,30 @@ class PCA:
     def transform(self, cache: FileCache) -> None:
         for fold in trange(cache.num_folds, desc='PCA projection on fold', unit='fold'):
             for part in ['train', 'val', 'test']:
+                # Kept the original clean arguments list
                 run_plink(args_list=['--score', str(cache.pca_path(fold, 'train', 'allele')), 
                                      '2', '5', 
                                      'header-read', 'no-mean-imputation', 'variance-standardize'],
                           args_dict={'--pfile': str(cache.pfile_path(fold, part)),
-                                     '--read-freq': str(cache.pca_path(fold, 'train', 'counts')),
+                                     # Removed '--read-freq' to prevent loading training set NaN/0 frequencies
+                                     '--mac': '1', # Filters out 0-frequency variants locally within the split part
                                      '--score-col-nums': f'6-{6+self.args.n_components - 1}',
-                                     '--mac': '1',
                                      '--out': cache.pfile_path(fold, part)})
                 
                 self.pc_scatterplot(cache, fold, part)
                 
     def predict(self, cache: FileCache) -> None:
+        # Kept the original clean arguments list here too
         run_plink(args_list=['--score', str(cache.pca_path(0, 'train', 'allele')), 
                             '2', '5', 
                             'header-read', 'no-mean-imputation', 'variance-standardize'],
                  args_dict={'--pfile': str(cache.pfile_path(part='pred')),
-                            '--read-freq': str(cache.pca_path(0, 'train', 'counts')),
-                            '--score-col-nums': f'6-{6+self.args.n_components - 1}',
+                            # Removed '--read-freq'
                             '--mac': '1',
+                            '--score-col-nums': f'6-{6+self.args.n_components - 1}',
                             '--out': cache.pfile_path(part='pred')})
-                
-                
+        
+        
     def pc_scatterplot(self, cache: FileCache, fold: int, part: str) -> None:
         """ Visualises eigenvector with scatterplot [matrix] """
         eigenvec = pandas.read_table(cache.pca_path(fold, part, 'sscore'))[['#IID', 'PC1_AVG', 'PC2_AVG']]
