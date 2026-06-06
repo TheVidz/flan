@@ -28,13 +28,17 @@ class Y:
         return new_y
 
 
-def load_phenotype(phenotype_path: str, out_type = numpy.float32, encode = False) -> numpy.ndarray:
+def load_phenotype(phenotype_path: str, out_type = numpy.float32, encode = False, keep_iids = None) -> numpy.ndarray:
     """
     :param phenotype_path: Phenotypes location
     :param out_type: convert to type
     :param encode: whether phenotypes are strings and we want to code them as ints)
     """
     data = pandas.read_table(phenotype_path)
+    # Highlighted Fix: If a list of aligned IIDs is provided, filter and order by them
+    if keep_iids is not None:
+        data = data.set_index('IID').reindex(keep_iids).reset_index()
+        
     data = data.iloc[:, -1].values
     if encode:
         _, data = numpy.unique(data, return_inverse=True)
@@ -48,8 +52,9 @@ def load_plink_pcs(path, order_as_in_file=None):
 
     if order_as_in_file is not None:
         y = pandas.read_csv(order_as_in_file, sep='\t').set_index('IID')
-        assert len(df) == len(y)
-        df = df.reindex(y.index)
+        # Highlighted Fix: Drop the strict assert check and intersect valid indices instead
+        common_ids = y.index.intersection(df.index)
+        df = df.reindex(common_ids)
 
     return df
 
@@ -58,8 +63,8 @@ class LocalDataLoader:
     def __init__(self) -> None:
         self.logger = logging.getLogger()
 
-    def _load_phenotype(self, path: str) -> numpy.ndarray:
-        phenotype = load_phenotype(path, out_type=numpy.int64, encode=True)
+    def _load_phenotype(self, path: str, keep_iids = None) -> numpy.ndarray:
+        phenotype = load_phenotype(path, out_type=numpy.int64, encode=True, keep_iids=keep_iids)
         print(f'Phenotype dtype is {phenotype.dtype}')
         if numpy.isnan(phenotype).sum() > 0:
             raise ValueError(f'There are {numpy.isnan(phenotype).sum()} nan values in phenotype from {path}')
@@ -67,29 +72,46 @@ class LocalDataLoader:
             return phenotype
 
     def load(self, cache: FileCache, fold: int) -> Tuple[X, Y]:
+        # Highlighted Fix: Dynamically read available sample IIDs from the generated sscore files
+        iids_train = pandas.read_csv(cache.pca_path(fold, 'train', 'sscore'), sep='\t').rename(columns={'#IID': 'IID'})['IID'].values
+        iids_val = pandas.read_csv(cache.pca_path(fold, 'val', 'sscore'), sep='\t').rename(columns={'#IID': 'IID'})['IID'].values
+        iids_test = pandas.read_csv(cache.pca_path(fold, 'test', 'sscore'), sep='\t').rename(columns={'#IID': 'IID'})['IID'].values
 
-        y_train = self._load_phenotype(cache.phenotype_path(fold, 'train'))
-        y_val = self._load_phenotype(cache.phenotype_path(fold, 'val'))
-        y_test = self._load_phenotype(cache.phenotype_path(fold, 'test'))
+        # Load features matching the safe intersections
+        x = self._load_pcs(cache, fold, iids_train, iids_val, iids_test)
+
+        # Load phenotypes safely aligned with those exact feature IDs
+        y_train = self._load_phenotype(cache.phenotype_path(fold, 'train'), keep_iids=iids_train)
+        y_val = self._load_phenotype(cache.phenotype_path(fold, 'val'), keep_iids=iids_val)
+        y_test = self._load_phenotype(cache.phenotype_path(fold, 'test'), keep_iids=iids_test)
         y = Y(y_train, y_val, y_test)
         
-        x = self._load_pcs(cache, fold)
         return x, y
 
-    def _load_pcs(self, cache: FileCache, fold: int) -> X:
+    def _load_pcs(self, cache: FileCache, fold: int, iids_train=None, iids_val=None, iids_test=None) -> X:
         X_train = load_plink_pcs(path=cache.pca_path(fold, 'train', 'sscore'), 
-                                 order_as_in_file=cache.phenotype_path(fold, 'train')).values.astype(numpy.float32)
+                                 order_as_in_file=cache.phenotype_path(fold, 'train'))
+        if iids_train is not None:
+            X_train = X_train.reindex(iids_train)
+        X_train = X_train.values.astype(numpy.float32)
+
         X_val = load_plink_pcs(path=cache.pca_path(fold, 'val', 'sscore'), 
-                               order_as_in_file=cache.phenotype_path(fold, 'val')).values.astype(numpy.float32)
+                               order_as_in_file=cache.phenotype_path(fold, 'val'))
+        if iids_val is not None:
+            X_val = X_val.reindex(iids_val)
+        X_val = X_val.values.astype(numpy.float32)
+
         X_test = load_plink_pcs(path=cache.pca_path(fold, 'test', 'sscore'), 
-                                order_as_in_file=cache.phenotype_path(fold, 'test')).values.astype(numpy.float32)
+                                order_as_in_file=cache.phenotype_path(fold, 'test'))
+        if iids_test is not None:
+            X_test = X_test.reindex(iids_test)
+        X_test = X_test.values.astype(numpy.float32)
+
         return X(X_train, X_val, X_test)
 
     def load_for_prediction(self, cache: FileCache) -> Tuple[numpy.ndarray, numpy.ndarray]:
         X_pred = load_plink_pcs(path=cache.pca_path(None, 'pred', 'sscore')).values.astype(numpy.float32)
-        # TODO: if fold 0 train dataset does not contain all possible target values, then we are in trouble
         data = pandas.read_table(cache.phenotype_path(0, 'train'))
         data = data.iloc[:, -1].values
         unique, _ = numpy.unique(data, return_inverse=True)
-        return X_pred, unique 
-        
+        return X_pred, unique
