@@ -30,8 +30,8 @@ class FoldSplitter:
             random_state (int): Fixed random_state for train_test_split sklearn function
         """
         # adding min 5 folds
-        # num_folds = getattr(self.args, "num_folds", 5)
-        # self.args.num_folds = num_folds
+        num_folds = getattr(self.args, "num_folds", 5)
+        self.args.num_folds = num_folds
 
         ids = pandas.read_table(cache.ids_path()).rename(columns={'#IID': 'IID'}).filter(['FID', 'IID'])
         indices = numpy.arange(ids.shape[0])
@@ -71,15 +71,20 @@ class FoldSplitter:
                 ids.iloc[indices, :].to_csv(out_path, sep='\t', index=False)
                 
     def _split_genotypes(self, cache: FileCache) -> None:
+        # 🔥 Force use of QC-processed genotype
+        base_path = str(cache.pfile_path())
+        if not base_path.endswith("_qc"):
+            base_path = base_path + "_qc"
+
         for fold_index, part in product(range(cache.num_folds), ['train', 'val', 'test']):
             run_plink(
                 args_dict={
-                    '--pfile': str(cache.pfile_path()),
+                    '--pfile': base_path,  # ✅ FIXED: use QC data
                     '--keep': str(cache.ids_path(fold_index, part)),
-                    '--out':  str(cache.pfile_path(fold_index, part))
+                    '--out': str(cache.pfile_path(fold_index, part))
                 },
                 args_list=['--make-pgen']
-            )        
+            )
     
     def _split_phenotypes(self, cache: FileCache) -> None:
         phenotype = pandas.read_table(cache.phenotype_path(), names=['IID', 'ancestry', 'in_phase3'])
@@ -93,7 +98,9 @@ class FoldSplitter:
             )
     
     def fit_transform(self, cache: FileCache) -> None:
-
+        # Force splitter to use QC output
+        if not str(cache.pfile_path()).endswith("_qc"):
+            cache._pfile_path = str(cache.pfile_path()) + "_qc"
         self._split_ids(cache)
         self._split_genotypes(cache)
         self._split_phenotypes(cache)
